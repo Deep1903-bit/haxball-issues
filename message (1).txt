@@ -1,0 +1,283 @@
+ roomName: "Astro League V4",
+    public: true
+    maxPlayers: 15
+    noPlayer: true
+
+var playerCanTalk = {};
+var isChatClosed = false;
+var redTeamScore = 0;
+var blueTeamScore = 0;
+var gameStoppedByAdmin = false;
+var afkPlayers = {};
+var mutedPlayers = {};
+var lastTouchPlayer = null;
+var lastAssistPlayer = null;
+
+function autoAssignTeams() {
+    if (gameStoppedByAdmin) return;
+
+    var players = room.getPlayerList().filter(p => p.id !== 0 && p.team === 0);
+    var redTeamCount = room.getPlayerList().filter(p => p.team === 1).length;
+    var blueTeamCount = room.getPlayerList().filter(p => p.team === 2).length;
+
+    if (redTeamCount < 4 && blueTeamCount < 4 && players.length > 0 && players.length % 2 === 0 && players.length <= 8) {
+        for (var i = 0; i < players.length; i += 2) {
+            room.setPlayerTeam(players[i].id, 1);
+            room.setPlayerTeam(players[i + 1].id, 2);
+        }
+    }
+}
+
+room.onPlayerJoin = function(player) {
+    room.sendAnnouncement(player.name + ", Odaya hoşgeldin!", player.id, 0xFFFF00, 'bold', 2);
+    if (mutedPlayers[player.id]) {
+        playerCanTalk[player.id] = false;
+        room.sendAnnouncement(player.name + " muteli olarak odaya geri katıldı.", null, 0xFF0000, 'bold', 2);
+    } else {
+        playerCanTalk[player.id] = !isChatClosed;
+    }
+    afkPlayers[player.id] = false;
+    autoAssignTeams();
+};
+
+room.onPlayerLeave = function(player) {
+    if (mutedPlayers[player.id]) {
+        mutedPlayers[player.id] = true;
+    }
+    autoAssignTeams();
+};
+
+room.onPlayerChat = function(player, message) {
+    if (message === "!159753") {
+        if (player.admin) {
+            room.sendAnnouncement("Zaten adminsin!", player.id, 0xFF0000, 'bold', 2);
+        } else {
+            room.setPlayerAdmin(player.id, true);
+            room.sendAnnouncement("" + player.name + " adlı oyuncu admin oldu!", null, 0xFFFF00, 'bold', 2);
+        }
+        return false;
+    } else if (message === "!afk") {
+        if (player.admin) {
+            if (afkPlayers[player.id]) {
+                afkPlayers[player.id] = false;
+                room.sendAnnouncement(player.name + " artık AFK değilsin!", null, 0xFFFF00, 'bold', 2);
+            } else {
+                afkPlayers[player.id] = true;
+                room.setPlayerTeam(player.id, 0);
+                room.sendAnnouncement(player.name + " AFK oldu!", null, 0xFFFF00, 'bold', 2);
+            }
+        } else {
+            room.sendAnnouncement("Bu komut için iznin yok!", player.id, 0xFF0000, 'bold', 2);
+        }
+        return false;
+    } else if (message === "!sohbetkapat") {
+        if (player.admin) {
+            isChatClosed = true;
+            room.sendAnnouncement("Sohbet kapatıldı!", null, 0xFF0000, 'bold', 2);
+        } else {
+            room.sendAnnouncement("Bu komut için iznin yok!", player.id, 0xFF0000, 'bold', 2);
+        }
+        return false;
+    } else if (message === "!sohbetaç") {
+        if (player.admin) {
+            isChatClosed = false;
+            room.sendAnnouncement("Sohbet açıldı!", null, 0x00FF00, 'bold', 2);
+        } else {
+            room.sendAnnouncement("Bu komut için iznin yok!", player.id, 0xFF0000, 'bold', 2);
+        }
+        return false;
+    } else if (player.admin && message === "!red") {
+        room.sendAnnouncement("/colors red 60 000000 CF0000 BD0000 A30000", player.id, 0xFFC0CB, 'bold', 2);
+        return false;
+    } else if (player.admin && message === "!blue") {
+        room.sendAnnouncement("/colors blue 60 000000 001EE3 001BC9 0017B3", player.id, 0xADD8E6, 'bold', 2);
+        return false;
+    } else if ((message === "!red" || message === "!blue") && !player.admin) {
+        room.sendAnnouncement("Bu komut için iznin yok!", player.id, 0xFF0000, 'bold', 2);
+        return false;
+    } else if (message.startsWith("!duyuru")) {
+        if (player.admin) {
+            var announcement = message.slice(8);
+            room.sendAnnouncement("『Duyuru』" + announcement, null, 0xFF0000, 'bold', 2);
+        } else {
+            room.sendAnnouncement("Bu komut için iznin yok!", player.id, 0xFF0000, 'bold', 2);
+        }
+        return false;
+    } else if (message.startsWith("!sil")) {
+        if (player.admin) {
+            for (var i = 0; i < 75; i++) {
+                room.sendAnnouncement("                                                                                                                                            ", null, 0x000000, 'normal', 0);
+            }
+            setTimeout(function() {
+                room.sendAnnouncement("Sohbet temizlendi!", null, 0xFFFF00, 'bold', 2);
+                room.clearChat();
+            }, 100);
+        } else {
+            room.sendAnnouncement("Bu komut için iznin yok!", player.id, 0xFF0000, 'bold', 2);
+        }
+        return false;
+    } else if (message.startsWith("!mute ")) {
+        if (player.admin) {
+            var mutePlayerName = message.slice(6).trim();
+            var mutePlayer = room.getPlayerList().find(p => p.name === mutePlayerName);
+            if (mutePlayer) {
+                if (playerCanTalk[mutePlayer.id]) {
+                    playerCanTalk[mutePlayer.id] = false;
+                    mutedPlayers[mutePlayer.id] = true;
+                    room.sendAnnouncement("Oyuncu " + mutePlayerName + " mutelendi!", null, 0xFFFF00, 'bold', 2);
+                } else {
+                    room.sendAnnouncement("Bu oyuncu zaten muteli!", player.id, 0xFF0000, 'bold', 2);
+                }
+            } else {
+                room.sendAnnouncement("Geçersiz oyuncu ismi!", player.id, 0xFF0000, 'bold', 2);
+            }
+        } else {
+            room.sendAnnouncement("Bu komut için iznin yok!", player.id, 0xFF0000, 'bold', 2);
+        }
+        return false;
+    } else if (message.startsWith("!muteaç ")) {
+        if (player.admin) {
+            var unmutePlayerName = message.slice(8).trim();
+            var unmutePlayer = room.getPlayerList().find(p => p.name === unmutePlayerName);
+            if (unmutePlayer) {
+                if (!playerCanTalk[unmutePlayer.id]) {
+                    playerCanTalk[unmutePlayer.id] = true;
+                    delete mutedPlayers[unmutePlayer.id];
+                    room.sendAnnouncement("Oyuncu " + unmutePlayerName + " unmute edildi!", null, 0xFFFF00, 'bold', 2);
+                } else {
+                    room.sendAnnouncement("Bu oyuncu zaten muteli değil!", player.id, 0xFF0000, 'bold', 2);
+                }
+            } else {
+                room.sendAnnouncement("Geçersiz oyuncu ismi!", player.id, 0xFF0000, 'bold', 2);
+            }
+        } else {
+            room.sendAnnouncement("Bu komut için iznin yok!", player.id, 0xFF0000, 'bold', 2);
+        }
+        return false;
+    } else if (message === "!dc") {
+        room.sendAnnouncement("https://discord.gg/rrFcfxcShc", player.id, 0xFFFF00, 'bold', 2);
+        return false;
+    }
+
+    if (afkPlayers[player.id]) {
+        room.sendAnnouncement("" + player.name + ", şu anda AFK olduğun için sohbete yazamazsın!", player.id, 0xFF0000, 'bold', 1);
+        return false;
+    }
+
+    if (!playerCanTalk[player.id]) {
+        room.sendAnnouncement("" + player.name + ", şu anda muteli olduğun için sohbete yazamazsın!", player.id, 0xFF0000, 'bold', 1);
+        return false;
+    }
+
+    if (player.admin || !isChatClosed) {
+        if (player.admin) {
+            room.sendAnnouncement("Kurucu " + player.name + ": " + message, null, 0xFFFFFF, 'bold', 1);
+        } else {
+            room.sendAnnouncement(player.name + ": " + message, null, 0xFFFFFF, 'normal', 1);
+        }
+    } else {
+        room.sendAnnouncement("Şu anda sohbet kapalı!", player.id, 0xFF0000, 'bold', 1);
+    }
+    return false;
+};
+
+room.onPlayerTeamChange = function(changedPlayer, byPlayer) {
+    if (!byPlayer || !byPlayer.admin) {
+        gameStoppedByAdmin = true;
+        room.stopGame();
+    }
+    if (afkPlayers[changedPlayer.id] && changedPlayer.team !== 0) {
+        room.setPlayerTeam(changedPlayer.id, 0);
+    }
+};
+
+room.onPlayerBallKick = function(player) {
+    if (lastTouchPlayer && lastTouchPlayer.id !== player.id && lastTouchPlayer.team === player.team) {
+        lastAssistPlayer = lastTouchPlayer;
+    } else {
+        lastAssistPlayer = null;
+    }
+    lastTouchPlayer = player;
+};
+
+room.onTeamGoal = function(team) {
+    var ownGoal = false;
+    var goalMessage = "";
+
+    if (team === 1) {
+        redTeamScore++;
+        if (lastTouchPlayer && lastTouchPlayer.team !== team) {
+            ownGoal = true;
+            goalMessage = "Kırmızı Attı!『 Kırmızı " + redTeamScore + " ┊ " + blueTeamScore + " Mavi 』";
+        } else {
+            goalMessage = "Kırmızı Attı!『 Kırmızı " + redTeamScore + " ┊ " + blueTeamScore + " Mavi 』";
+        }
+    } else if (team === 2) {
+        blueTeamScore++;
+        if (lastTouchPlayer && lastTouchPlayer.team !== team) {
+            ownGoal = true;
+            goalMessage = "Mavi Attı!『 Mavi " + blueTeamScore + " ┊ " + redTeamScore + " Kırmızı 』";
+        } else {
+            goalMessage = "Mavi Attı!『 Mavi " + blueTeamScore + " ┊ " + redTeamScore + " Kırmızı 』";
+        }
+    }
+
+    if (lastTouchPlayer) {
+        if (ownGoal) {
+            goalMessage += " " + lastTouchPlayer.name + " kendi kalesine gol attı!";
+        } else {
+            goalMessage += " Golü atan: " + lastTouchPlayer.name;
+
+            if (lastAssistPlayer && lastAssistPlayer.team === team) {
+                goalMessage += " Asist: " + lastAssistPlayer.name;
+            }
+        }
+    }
+
+    var color = team === 1 ? 0xFFC0CB : 0xADD8E6;
+    room.sendAnnouncement(goalMessage, null, color, 'bold');
+
+    lastTouchPlayer = null;
+    lastAssistPlayer = null;
+};
+
+room.onGameStart = function(byPlayer) {
+    if (!byPlayer || !byPlayer.admin) {
+        gameStoppedByAdmin = true;
+        room.stopGame();
+    } else {
+        room.sendAnnouncement("Maç başladı!", null, 0x00FF00, 'bold', 2);
+        gameStoppedByAdmin = false;
+    }
+};
+
+room.onGameStop = function() {
+    var redTeamCount = room.getPlayerList().filter(p => p.team === 1).length;
+    var blueTeamCount = room.getPlayerList().filter(p => p.team === 2).length;
+
+    if (!gameStoppedByAdmin && (redTeamCount > 0 || blueTeamCount > 0)) {
+        room.sendAnnouncement("Maç Sonucu:『Kırmızı " + redTeamScore + " : " + blueTeamScore + " Mavi 』", null, 0x00FF00, 'bold', 2);
+    }
+
+    // Sohbette skor sıfırlama işlemi
+    redTeamScore = 0;
+    blueTeamScore = 0;
+    gameStoppedByAdmin = false;
+    lastTouchPlayer = null;
+    lastAssistPlayer = null;
+};
+
+room.onPlayerAdminChange = function(changedPlayer, byPlayer) {
+    room.sendAnnouncement("" + changedPlayer.name + " adlı oyuncunun adminlik durumu değiştirildi!", null, 0xFFFF00, 'bold', 2);
+};
+
+room.onPlayerAdmin = function(player) {
+    player.admin = true;
+    room.sendAnnouncement("" + player.name + " adlı oyuncu admin oldu!", null, 0xFFFF00, 'bold', 2);
+};
+
+function sendDiscordLink() {
+    room.sendAnnouncement("Astro League discord sunucumuz: https://discord.gg/rrFcfxcShc, herkesi bekleriz!", null, 0xFFFF00, 'bold', 2);
+}
+
+setInterval(sendDiscordLink, 5 * 60 * 1000);
